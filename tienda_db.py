@@ -185,39 +185,6 @@ def insert_sample_data(conn):
     cursor.close()
     print("Sample data inserted successfully")
 
-def query_sample_data(conn):
-    """Query and display sample data"""
-    cursor = conn.cursor()
-    
-    print("\n--- Usuarios ---")
-    cursor.execute("SELECT id, nombre, email FROM usuarios")
-    for row in cursor.fetchall():
-        print(f"ID: {row[0]}, Nombre: {row[1]}, Email: {row[2]}")
-    
-    print("\n--- Productos ---")
-    cursor.execute("SELECT id, nombre, precio, stock FROM productos")
-    for row in cursor.fetchall():
-        print(f"ID: {row[0]}, Nombre: {row[1]}, Precio: ${row[2]}, Stock: {row[3]}")
-    
-    print("\n--- Órdenes ---")
-    cursor.execute("""
-        SELECT o.id, u.nombre, o.fecha_orden, o.estado, o.total 
-        FROM ordenes o 
-        JOIN usuarios u ON o.usuario_id = u.id
-    """)
-    for row in cursor.fetchall():
-        print(f"Orden ID: {row[0]}, Usuario: {row[1]}, Fecha: {row[2]}, Estado: {row[3]}, Total: ${row[4]}")
-    
-    print("\n--- Detalles de Órdenes ---")
-    cursor.execute("""
-        SELECT op.orden_id, p.nombre, op.cantidad, op.precio_unitario, (op.cantidad * op.precio_unitario) as subtotal
-        FROM orden_producto op
-        JOIN productos p ON op.producto_id = p.id
-        ORDER BY op.orden_id
-    """)
-    for row in cursor.fetchall():
-        print(f"Orden ID: {row[0]}, Producto: {row[1]}, Cantidad: {row[2]}, Precio: ${row[3]}, Subtotal: ${row[4]}")
-
 def main():
     import argparse
     
@@ -248,9 +215,6 @@ def main():
     
     # Insert sample data
     insert_sample_data(conn)
-    
-    # Query and display sample data
-    query_sample_data(conn)
     
     # Close connection
     conn.close()
