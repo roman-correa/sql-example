@@ -2,6 +2,7 @@ import psycopg2
 from psycopg2 import sql
 import os
 from dotenv import load_dotenv
+import sys
 
 # Load environment variables from .env file
 load_dotenv()
@@ -47,23 +48,44 @@ def reset_database(conn, db_name):
     """Drop and recreate the database to start from scratch"""
     cursor = conn.cursor()
     
-    # Close all active connections to the database
-    cursor.execute("""
-        SELECT pg_terminate_backend(pg_stat_activity.pid)
-        FROM pg_stat_activity
-        WHERE pg_stat_activity.datname = %s
-        AND pid <> pg_backend_pid()
-    """, (db_name,))
-    
-    # Drop database if exists
-    cursor.execute(f"DROP DATABASE IF EXISTS {db_name}")
-    print(f"Database {db_name} dropped")
-    
-    # Create database again
-    cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
-    print(f"Database {db_name} recreated successfully")
-    
-    cursor.close()
+    try:
+        # First, terminate all active connections to the database
+        cursor.execute("""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = %s
+            AND pid <> pg_backend_pid()
+        """, (db_name,))
+        
+        # We need to connect to a different database (postgres) before dropping
+        cursor.close()
+        conn.close()
+        
+        # Connect to the default postgres database
+        temp_conn = psycopg2.connect(
+            dbname="postgres",
+            user=os.getenv("DB_USER", "postgres"),
+            password=os.getenv("DB_PASSWORD", "password"),
+            host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "5432")
+        )
+        temp_conn.autocommit = True
+        temp_cursor = temp_conn.cursor()
+        
+        # Now we can drop and recreate the database
+        temp_cursor.execute(f"DROP DATABASE IF EXISTS {db_name}")
+        print(f"Database {db_name} dropped")
+        
+        temp_cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+        print(f"Database {db_name} recreated successfully")
+        
+        temp_cursor.close()
+        temp_conn.close()
+        
+        return True
+    except Exception as e:
+        print(f"Error resetting database: {str(e)}")
+        return False
 
 def create_tables(conn):
     """Create tables for users, products, orders, and order_products"""
@@ -128,11 +150,13 @@ def insert_sample_data(conn):
         ('Ana Martínez', 'ana@example.com')
     ]
     
+    usuario_ids = []
     for usuario in usuarios:
         cursor.execute(
             "INSERT INTO usuarios (nombre, email) VALUES (%s, %s) RETURNING id",
             usuario
         )
+        usuario_ids.append(cursor.fetchone()[0])
     
     # Insert products
     productos = [
@@ -140,7 +164,12 @@ def insert_sample_data(conn):
         ('Teléfono', 'Smartphone 5G', 800.00, 15),
         ('Auriculares', 'Auriculares inalámbricos', 120.00, 30),
         ('Tablet', 'Tablet de 10 pulgadas', 350.00, 8),
-        ('Monitor', 'Monitor 4K de 27 pulgadas', 450.00, 5)
+        ('Monitor', 'Monitor 4K de 27 pulgadas', 450.00, 5),
+        ('Teclado', 'Teclado mecánico RGB', 85.00, 20),
+        ('Mouse', 'Mouse inalámbrico ergonómico', 45.00, 25),
+        ('Impresora', 'Impresora multifuncional', 250.00, 7),
+        ('Disco duro', 'Disco duro externo 2TB', 130.00, 12),
+        ('Cámara web', 'Cámara web HD', 65.00, 15)
     ]
     
     for producto in productos:
@@ -151,10 +180,16 @@ def insert_sample_data(conn):
     
     # Insert orders
     ordenes = [
-        (1, 'completada', 1320.00),  # Juan compra laptop y auriculares
-        (2, 'pendiente', 800.00),    # María compra teléfono
-        (3, 'enviada', 900.00),      # Carlos compra tablet y auriculares
-        (2, 'completada', 450.00)    # María compra monitor
+        (usuario_ids[0], 'completada', 1320.00),   # Juan: laptop y auriculares
+        (usuario_ids[1], 'pendiente', 800.00),     # María: teléfono
+        (usuario_ids[2], 'enviada', 590.00),       # Carlos: tablet y auriculares
+        (usuario_ids[1], 'completada', 450.00),    # María: monitor
+        (usuario_ids[3], 'pendiente', 330.00),     # Ana: impresora y mouse
+        (usuario_ids[0], 'completada', 895.00),    # Juan: teléfono, teclado
+        (usuario_ids[2], 'cancelada', 195.00),     # Carlos: disco duro, mouse
+        (usuario_ids[3], 'enviada', 1250.00),      # Ana: laptop, mouse
+        (usuario_ids[0], 'pendiente', 150.00),     # Juan: teclado, cámara web
+        (usuario_ids[1], 'completada', 580.00)     # María: tablet, teclado, auriculares
     ]
     
     orden_ids = []
@@ -167,12 +202,47 @@ def insert_sample_data(conn):
     
     # Insert order details
     orden_productos = [
-        (orden_ids[0], 1, 1, 1200.00),  # Orden 1: 1 laptop
-        (orden_ids[0], 3, 1, 120.00),   # Orden 1: 1 auriculares
-        (orden_ids[1], 2, 1, 800.00),   # Orden 2: 1 teléfono
-        (orden_ids[2], 4, 1, 350.00),   # Orden 3: 1 tablet
-        (orden_ids[2], 3, 2, 120.00),   # Orden 3: 2 auriculares
-        (orden_ids[3], 5, 1, 450.00)    # Orden 4: 1 monitor
+        # Orden 1: Juan - laptop y auriculares
+        (orden_ids[0], 1, 1, 1200.00),
+        (orden_ids[0], 3, 1, 120.00),
+        
+        # Orden 2: María - teléfono
+        (orden_ids[1], 2, 1, 800.00),
+        
+        # Orden 3: Carlos - tablet y auriculares
+        (orden_ids[2], 4, 1, 350.00),
+        (orden_ids[2], 3, 2, 120.00),
+        
+        # Orden 4: María - monitor
+        (orden_ids[3], 5, 1, 450.00),
+        
+        # Orden 5: Ana - impresora y mouse
+        (orden_ids[4], 8, 1, 250.00),
+        (orden_ids[4], 7, 2, 45.00),
+        
+        # Orden 6: Juan - teléfono, teclado
+        (orden_ids[5], 2, 1, 800.00),
+        (orden_ids[5], 6, 1, 85.00),
+        (orden_ids[5], 10, 1, 65.00),
+        
+        # Orden 7: Carlos - disco duro, mouse
+        (orden_ids[6], 9, 1, 130.00),
+        (orden_ids[6], 7, 1, 45.00),
+        (orden_ids[6], 10, 1, 65.00),
+        
+        # Orden 8: Ana - laptop, mouse
+        (orden_ids[7], 1, 1, 1200.00),
+        (orden_ids[7], 7, 1, 45.00),
+        
+        # Orden 9: Juan - teclado, cámara web
+        (orden_ids[8], 6, 1, 85.00),
+        (orden_ids[8], 10, 1, 65.00),
+        
+        # Orden 10: María - tablet, teclado, auriculares
+        (orden_ids[9], 4, 1, 350.00),
+        (orden_ids[9], 6, 1, 85.00),
+        (orden_ids[9], 3, 1, 120.00),
+        (orden_ids[9], 7, 1, 45.00)
     ]
     
     for orden_producto in orden_productos:
@@ -199,15 +269,19 @@ def main():
     
     if args.reset:
         # Reset the database
-        reset_database(conn, args.db_name)
+        reset_success = reset_database(conn, args.db_name)
+        if not reset_success:
+            print("Error al reiniciar la base de datos. Saliendo...")
+            sys.exit(1)
     else:
-        # Create new database
+        # Create new database if it doesn't exist
         create_database(conn, args.db_name)
     
     # Close connection to default database
-    conn.close()
+    if conn:
+        conn.close()
     
-    # Connect to our new database
+    # Connect to our database
     conn = create_connection(dbname=args.db_name)
     
     # Create tables
@@ -215,9 +289,10 @@ def main():
     
     # Insert sample data
     insert_sample_data(conn)
-    
+        
     # Close connection
-    conn.close()
+    if conn:
+        conn.close()
     print("\nDatabase operations completed successfully!")
 
 if __name__ == "__main__":
