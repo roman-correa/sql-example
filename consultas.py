@@ -1,5 +1,4 @@
 import sys
-import os
 import argparse
 from tabulate import tabulate  # Para mostrar resultados en formato de tabla
 
