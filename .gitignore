@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+ejercicios_sql_solution.ipynb
 # C extensions
 *.so
 

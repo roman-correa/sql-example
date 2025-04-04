@@ -42,27 +42,11 @@ def display_results(columns, results):
     else:
         print(results)
 
-def main():
-    parser = argparse.ArgumentParser(description="Ejecuta consultas SQL en la base de datos tienda")
-    parser.add_argument("--db-name", default="tienda_db", help="Nombre de la base de datos")
-    args = parser.parse_args()
-    
-    # Modificar esta consulta según las necesidades
-    query = """
-        SELECT *
-        FROM ordenes
-    """
-    
+def show_query(query):   
     # Conectar a la base de datos
     try:
-        conn = create_connection(dbname=args.db_name)
-        
-        # Ejecutar la consulta
+        conn = create_connection()
         columns, results = execute_query(conn, query)
-        
-        # Mostrar los resultados
-        print(f"\nEjecutando consulta en la base de datos '{args.db_name}':")
-        print(f"SQL: {query.strip()}\n")
         display_results(columns, results)
         
     except Exception as e:
@@ -72,4 +56,8 @@ def main():
             conn.close()
 
 if __name__ == "__main__":
-    main()
+    query = """
+        SELECT *
+        FROM ordenes
+    """
+    show_query(query)
